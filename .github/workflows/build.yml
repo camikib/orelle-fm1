@@ -1,0 +1,55 @@
+# Builds the FM-1 firmware package (.fwsc) on every push and pull request.
+# Download the "orelle-fwsc" artifact from the run and drop the .fwsc into
+# https://joakimeriksson.github.io/fm1-emu/ to playtest it in the browser.
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install Pillow fonttools
+
+      - name: Cache JieLi toolchain
+        id: tc
+        uses: actions/cache@v4
+        with:
+          path: ~/.jieli
+          key: jieli-linux-toolchain-v1
+
+      - name: Get JieLi toolchain
+        if: steps.tc.outputs.cache-hit != 'true'
+        run: tools/get_toolchain.sh
+
+      - name: Get the three AC79 SDK files the package needs
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
+          cd ~/fw-AC79_AIoT_SDK
+          git sparse-checkout set --no-cone \
+            cpu/wl82/tools/uboot.boot cpu/wl82/tools/cfg_tool.bin cpu/wl82/tools/cfg/eq_cfg_hw.bin
+          ls -l cpu/wl82/tools/uboot.boot
+
+      - name: Build
+        run: ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orelle-fwsc
+          path: build/*.fwsc
+          if-no-files-found: error
